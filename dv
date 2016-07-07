@@ -1,0 +1,92 @@
+#!/usr/bin/perl -w
+use Getopt::Long;
+use Time::Seconds;
+use Data::Dumper;
+use File::Basename;
+# Price of the food, and time to grow
+$data{'berrybauble'}={'price'=>'65000000','food'=>'1000000','time'=>'129600'};
+$data{'krakenkabbage'}={'price'=>'35000000','food'=>'500000','time'=>'21600'};
+$data{'cactisnack'}={'price'=>'20000000','food'=>'250000','time'=>'1800'};
+$data{'beansstalk'}={'price'=>'5000000','food'=>'100000','time'=>'3600'};
+$data{'omegasquash'}={'price'=>'1000000','food'=>'20000','time'=>'600'};
+$data{'sarjinpepper'}={'price'=>'500000','food'=>'10000','time'=>'60'};
+$data{'dragonfruit'}={'price'=>'75000','food'=>'3000','time'=>'86400'};
+$data{'pumpermelons'}={'price'=>'15000','food'=>'800','time'=>'21600'};
+$data{'blushrooms'}={'price'=>'5000','food'=>'300','time'=>'7200'};
+$data{'zazzberries'}={'price'=>'1000','food'=>'75','time'=>'1800'};
+$data{'dragonroot'}={'price'=>'250','food'=>'20','time'=>'300'};
+$data{'dragonsnaps'}={'price'=>'50','food'=>'5','time'=>'30'};
+my $farms=11;
+use vars qw( $level $food $help );
+GetOptions('level=s',\$level,
+	'food=i',\$food,
+	'help',\$help,
+	'farms=i',\$farms
+);
+if(defined $level) {
+	our $to=$level;
+	our $from=1;
+	if ($level=~/(\d+)-(\d+)/) {
+		$from=$1;$to=$2;
+	}
+	my $food_end=2**($to-1)-1;
+	my $food_start=2**($from-1)-1;
+	my $food=20*($food_end-$food_start);
+	print "To get dragon from level $from to level $to, you should earn:\n".grouping($food)." food\n\n";
+	print "This will cost you:\n";
+	our %results;
+	foreach my $plant (sort keys %data) {
+		my $res=compute($food,$plant);
+		$results{$plant}=$res;
+	}
+	@sorted=sort {$results{$a}{'score'} <=> $results{$b}{'score'}} keys %results;
+	foreach my $plant (@sorted) {
+		print $results{$plant}{'score'},": ",grouping($results{$plant}{'cost'})," with ",$results{$plant}{'rounds'}," ",$plant," (this will take ".s2dhms(int($results{$plant}{'time'})),") with $farms farms) \n";
+	}
+} elsif (defined $food) {
+	print "Price of the food at level $food:\n".5*2**($food-1)."\n";
+} else {
+	print "\n DragonVale Helper\n\n";
+	print basename($0)," --level [<start level>-]<level> [ --farms <n> ]\n";
+	print basename($0)," --food  <level>\n\n";
+	print " --level: compute food dragon needs to reach that level, from level 1 or <start level>\n";
+	print " --farms: number of treat farm you have\n";
+	print " This will print something like\n\n";
+	print "  9.47: 16 500 000 with 33 sarjinpepper (this will take 3min) with 11 farms)\n";
+	print " 12.93: 65 000 000 with 1 berrybauble (this will take 2d12h) with 11 farms)\n\n";
+	print " First number is the score: log10(time*cost). This is supposed to indicate how a combination is interesting. The lower the score, the more it is.\n";
+	print " In this case, the first combination is more interesting, as it cost you less and takes less time.\n\n";
+	print " --food: display price of the food at that level\n";
+}
+# ----
+sub compute {
+	local $food=shift;
+	local $plant=shift;
+	$round=1+int($food/$data{$plant}{'food'});
+	$time=$data{$plant}{'time'}*$round/$farms;
+	$time=$data{$plant}{'time'} if ($time < $data{$plant}{'time'} );
+	# This is the cost of the n rounds
+	$cost=$round*$data{$plant}{'price'};
+	$score=sprintf('%5.2f',log($time*$cost)/log(10));
+	return {'plant'=>$plant,'time'=>$time,'score'=>$score,'rounds'=>$round,'cost'=>$cost};
+
+}
+sub grouping {
+	local $_  = shift;
+	1 while s/^(-?\d+)(\d{3})/$1 $2/;
+	return $_;
+}
+sub s2dhms {
+	$secs=shift(@_);
+	my $out;
+	my %unity;
+	@unity=('s','min','h','d');
+	foreach my $dur (ONE_DAY,ONE_HOUR,ONE_MINUTE,1) {
+		if ($secs>=$dur) {
+			# Je fais ce que je veux, non mais
+			$out.=sprintf('%.0f'.$unity[int(log($dur)/log(40))],$secs/$dur);
+			$secs=$secs%$dur;
+		}
+	}
+	return $out;
+}
