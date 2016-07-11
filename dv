@@ -24,7 +24,7 @@ format OUT_TOP=
 .
 format OUT =
 |@##.## | @<<<<<<<<<<<< | @>>>>>| @>>>>>>>>>>>>>>>>>>>> | @>>>>> | @>>>>>>>>>>>>> | @##   |
-$score $plant $tpp $cost $rounds $time $farms
+$score,$plant,$tpp,$cost,$rounds,$time,$farms
 .
 use vars qw( $level $food $help );
 GetOptions('level=s',\$level,
@@ -84,7 +84,6 @@ if(defined $level) {
 sub compute {
 	local $food=shift;
 	local $plant=shift;
-	print "$food/$data{$plant}{'food'}/$farms\n";
 	$round=1+int($food/$data{$plant}{'food'}/$farms);
 	$time=$data{$plant}{'time'}*$round;
 	$time=$data{$plant}{'time'} if ($time < $data{$plant}{'time'} );
