@@ -17,6 +17,15 @@ $data{'Zazzberries'}={'price'=>'1000','food'=>'75','time'=>'1800'};
 $data{'Dragon Root'}={'price'=>'250','food'=>'20','time'=>'300'};
 $data{'Dragon Snaps'}={'price'=>'50','food'=>'5','time'=>'30'};
 my $farms=11;
+format OUT_TOP=
++-------+---------------+-------+-----------------------+--------+----------------+-------+
+|Score  |     Plant     |  tpp  |          Cost         | Rounds |      Time      | Farms |
++-------+---------------+-------+-----------------------+--------+----------------+-------+
+.
+format OUT =
+|@##.## | @<<<<<<<<<<<< | @>>>>>| @>>>>>>>>>>>>>>>>>>>> | @>>>>> | @>>>>>>>>>>>>> | @##   |
+$score $plant $tpp $cost $rounds $time $farms
+.
 use vars qw( $level $food $help );
 GetOptions('level=s',\$level,
 	'food=i',\$food,
@@ -24,15 +33,6 @@ GetOptions('level=s',\$level,
 	'farms=i',\$farms
 );
 if(defined $level) {
-format OUT_TOP=
-+-------+---------------+---------------+--------+----------------+-------+
-|Score  |     Plant     |      Cost     | Rounds |      Time      | Farms |
-+-------+---------------+---------------+--------+----------------+-------+
-.
-format OUT =
-|@##.## | @<<<<<<<<<<<< | @>>>>>>>>>>>> | @>>>>> | @>>>>>>>>>>>>> | @##   |
-$score $plant $cost $rounds $time $farms
-.
 	our $to=$level;
 	our $from=1;
 	if ($level=~/(\d+)-(\d+)/) {
@@ -57,6 +57,7 @@ $score $plant $cost $rounds $time $farms
 		$cost=grouping($results{$plant}{'cost'});
 		$rounds=$results{$plant}{'rounds'};
 		$time=s2dhms(int($results{$plant}{'time'}));
+		$tpp=s2dhms($data{$plant}{'time'});
 		write;
 		#print $results{$plant}{'score'},": ",grouping($results{$plant}{'cost'})," with ",$results{$plant}{'rounds'}," rounds of ",$plant," (this will take ".s2dhms(int($results{$plant}{'time'})),") with $farms farms) \n";
 	}
@@ -70,11 +71,11 @@ $score $plant $cost $rounds $time $farms
 	print " --farms: number of treat farm you have\n";
 	print " This will print something like\n\n";
 	print "
-	+-------+---------------+---------------+--------+----------------+-------+
-	|Score  |     Plant     |      Cost     | Rounds |      Time      | Farms |
-	+-------+---------------+---------------+--------+----------------+-------+
-	| 12.83 | sarjinpepper  |   786 500 000 |   1573 |        2h23min |  11   |
-	| 13.11 | cactisnack    | 1 260 000 000 |     63 |     3h52min49s |  11   |\n\n";
+    +-------+---------------+-------+-----------------------+--------+----------------+-------+
+    |Score  |     Plant     |  tpp  |          Cost         | Rounds |      Time      | Farms |
+    +-------+---------------+-------+-----------------------+--------+----------------+-------+
+    | 15.83 | Dragon Snaps  |    30s|           786 432 000 | 285976 |      99d7h8min |  11   |
+    | 16.83 | Sarjin Pepper |   1min|     7 864 320 000 000 |    143 |        2h23min |  11   |\n\n";
 	print " First number is the score: log10(time*cost). This is supposed to indicate how a combination is interesting. The lower the score, the more it is.\n";
 	print " In this case, the first combination is more interesting, as it cost you less and takes less time.\n\n";
 	print " --food: display price of the food at that level\n";
@@ -83,11 +84,12 @@ $score $plant $cost $rounds $time $farms
 sub compute {
 	local $food=shift;
 	local $plant=shift;
-	$round=1+int($food/$data{$plant}{'food'});
-	$time=$data{$plant}{'time'}*$round/$farms;
+	print "$food/$data{$plant}{'food'}/$farms\n";
+	$round=1+int($food/$data{$plant}{'food'}/$farms);
+	$time=$data{$plant}{'time'}*$round;
 	$time=$data{$plant}{'time'} if ($time < $data{$plant}{'time'} );
 	# This is the cost of the n rounds
-	$cost=$round*$data{$plant}{'price'};
+	$cost=$food*$data{$plant}{'price'};
 	$score=sprintf('%5.2f',log($time*$cost)/log(10));
 	return {'plant'=>$plant,'time'=>$time,'score'=>$score,'rounds'=>$round,'cost'=>$cost};
 
