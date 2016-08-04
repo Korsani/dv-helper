@@ -18,12 +18,12 @@ $data{'Dragon Root'}={'price'=>'250','food'=>'20','tpp'=>'300'};
 $data{'Dragon Snaps'}={'price'=>'50','food'=>'5','tpp'=>'30'};
 my $farms=11;
 format OUT_TOP=
-+-------+---------------+------------+-------+-----------------------+--------+----------------+-------+
-|Score  |     Plant     |    cpp     |  tpp  |        Cost       | Rounds |      Time      | Farms |
-+-------+---------------+------------+-------+-----------------------+--------+----------------+-------+
++-------+---------------+---------+-------+-----------+--------+----------------+-------+
+|Score  |     Plant     |   cpp   |  tpp  |    Cost   | Rounds |      Time      | Farms |
++-------+---------------+---------+-------+-----------+--------+----------------+-------+
 .
 format OUT =
-|@##.## | @<<<<<<<<<<<< | @>>>>>>>>> | @>>>>>| @>>>>>>>>>>>>>>>> | @>>>>> | @>>>>>>>>>>>>> | @##   |
+|@##.## | @<<<<<<<<<<<< | @>>>>>> | @>>>>>| @>>>>>>>> | @>>>>> | @>>>>>>>>>>>>> | @##   |
 $score,$plant,$cpp,$tpp,$cost,$rounds,$time,$farms
 .
 use vars qw( $level $food $help );
@@ -32,6 +32,65 @@ GetOptions('level=s',\$level,
 	'help',\$help,
 	'farms=i',\$farms
 );
+
+# ----
+# Rounding function
+sub round($) {
+	my $n=shift;
+	if ($n == sprintf('%.0f',$n)) {
+		return $n;
+	} else {
+		return int($n)+1;
+	}
+}
+sub grouping($) {
+	local $_  = shift;
+	1 while s/^(-?\d+)(\d{3})/$1 $2/;
+	return $_;
+}
+sub s2dhms($) {
+	$secs=shift(@_);
+	my $out;
+	my %unity;
+	@unity=('s','min','h','d');
+	foreach my $dur (ONE_DAY,ONE_HOUR,ONE_MINUTE,1) {
+		if ($secs>=$dur) {
+			# Je fais ce que je veux, non mais
+			$out.=sprintf('%.0f'.$unity[int(log($dur)/log(40))],$secs/$dur);
+			$secs=$secs%$dur;
+		}
+	}
+	return $out;
+}
+sub compute($$) {
+	my $food=shift;
+	my $plant=shift;
+	# How many plants do I need for gather required food ?
+	my $plants=round($food/$data{$plant}{'food'});
+	my $cost=$plants*$data{$plant}{'price'};
+	# How many rounds of n farms do I need to gather food ?
+	my $rounds=round($plants/$farms);
+	# How many time does those rounds will take ?
+	my $time=$data{$plant}{'tpp'}*$rounds;
+	$time=$data{$plant}{'tpp'} if ($time < $data{$plant}{'tpp'} );
+	# This is the cost of the n rounds
+	my $score=sprintf('%5.2f',log($time*$cost)/log(10));
+	return {'plant'=>$plant,'tpp'=>$time,'score'=>$score,'rounds'=>$rounds,'cost'=>$cost};
+
+}
+sub n2gmk($) {
+    my $n=shift;
+	# This will give to power of 10 of the number, but I need a multiple of 3
+	my $pow10=log($n)/log(10);
+	# Rounding: if results seems to be an integer (if $n=1000_000, for example), actually it is not
+	$pow10="$pow10";
+	# Now it is
+	$pow=int($pow10/3);
+	$res=$n/(10**(3*$pow)).substr(' kMGTP',$pow,1);
+	$res=~s/ //;
+	return $res;
+}
+# ----
 if(defined $level) {
 	our $to=$level;
 	our $from=1;
@@ -58,7 +117,7 @@ if(defined $level) {
 		$rounds=$results{$plant}{'rounds'};
 		$time=s2dhms(int($results{$plant}{'tpp'}));
 		$tpp=s2dhms($data{$plant}{'tpp'});
-		$cpp=grouping($data{$plant}{'price'});
+		$cpp=n2gmk($data{$plant}{'price'});
 		write;
 		#print $results{$plant}{'score'},": ",grouping($results{$plant}{'cost'})," with ",$results{$plant}{'rounds'}," rounds of ",$plant," (this will take ".s2dhms(int($results{$plant}{'tpp'})),") with $farms farms) \n";
 	}
@@ -80,59 +139,4 @@ if(defined $level) {
 	print " First number is the score: log10(time*cost). This is supposed to indicate how a combination is interesting. The lower the score, the more it is.\n";
 	print " In this case, the first combination is more interesting, as it cost you less and takes less time.\n\n";
 	print " --food: display price of the food at that level\n";
-}
-# ----
-# Rounding function
-sub round($) {
-	my $n=shift;
-	if ($n == sprintf('%.0f',$n)) {
-		return $n;
-	} else {
-		return int($n)+1;
-	}
-}
-sub compute($) {
-	my $food=shift;
-	my $plant=shift;
-	# How many plants do I need for gather required food ?
-	my $plants=round($food/$data{$plant}{'food'});
-	my $cost=$plants*$data{$plant}{'price'};
-	# How many rounds of n farms do I need to gather food ?
-	my $rounds=round($plants/$farms);
-	# How many time does those rounds will take ?
-	my $time=$data{$plant}{'tpp'}*$rounds;
-	$time=$data{$plant}{'tpp'} if ($time < $data{$plant}{'tpp'} );
-	# This is the cost of the n rounds
-	my $score=sprintf('%5.2f',log($time*$cost)/log(10));
-	return {'plant'=>$plant,'tpp'=>$time,'score'=>$score,'rounds'=>$rounds,'cost'=>$cost};
-
-}
-sub grouping($) {
-	local $_  = shift;
-	1 while s/^(-?\d+)(\d{3})/$1 $2/;
-	return $_;
-}
-sub n2gmk($) {
-    my $n=shift;
-	# This will give to power of 10 of the number, but I need a multiple of 3
-	my $pow10=log($n)/log(10);
-	# Rounding: if results seems to be an integer (if $n=1000_000, for example), actually it is not
-	$pow10="$pow10";
-	# Now it is
-	my $pow=int($pow10/3);
-	return $n/(10**(3*$pow)).substr('kMGTP',$pow-1,1)."\n";
-}
-sub s2dhms($) {
-	$secs=shift(@_);
-	my $out;
-	my %unity;
-	@unity=('s','min','h','d');
-	foreach my $dur (ONE_DAY,ONE_HOUR,ONE_MINUTE,1) {
-		if ($secs>=$dur) {
-			# Je fais ce que je veux, non mais
-			$out.=sprintf('%.0f'.$unity[int(log($dur)/log(40))],$secs/$dur);
-			$secs=$secs%$dur;
-		}
-	}
-	return $out;
 }
