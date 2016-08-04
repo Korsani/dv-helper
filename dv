@@ -4,27 +4,27 @@ use Time::Seconds;
 use Data::Dumper;
 use File::Basename;
 # Price of the food, and time to grow
-$data{'Berry Bauble'}={'price'=>'65000000','food'=>'1000000','time'=>'129600'};
-$data{'Kraken Kabbage'}={'price'=>'35000000','food'=>'500000','time'=>'21600'};
-$data{'Cacti-snack'}={'price'=>'20000000','food'=>'250000','time'=>'1800'};
-$data{'Beanstalk'}={'price'=>'5000000','food'=>'100000','time'=>'3600'};
-$data{'Omega Squash'}={'price'=>'1000000','food'=>'20000','time'=>'600'};
-$data{'Sarjin Pepper'}={'price'=>'500000','food'=>'10000','time'=>'60'};
-$data{'Dragon Fruit'}={'price'=>'75000','food'=>'3000','time'=>'86400'};
-$data{'Pumpermelons'}={'price'=>'15000','food'=>'800','time'=>'21600'};
-$data{'Blushrooms'}={'price'=>'5000','food'=>'300','time'=>'7200'};
-$data{'Zazzberries'}={'price'=>'1000','food'=>'75','time'=>'1800'};
-$data{'Dragon Root'}={'price'=>'250','food'=>'20','time'=>'300'};
-$data{'Dragon Snaps'}={'price'=>'50','food'=>'5','time'=>'30'};
+$data{'Berry Bauble'}={'price'=>'65000000','food'=>'1000000','tpp'=>'129600'};
+$data{'Kraken Kabbage'}={'price'=>'35000000','food'=>'500000','tpp'=>'21600'};
+$data{'Cacti-snack'}={'price'=>'20000000','food'=>'250000','tpp'=>'1800'};
+$data{'Beanstalk'}={'price'=>'5000000','food'=>'100000','tpp'=>'3600'};
+$data{'Omega Squash'}={'price'=>'1000000','food'=>'20000','tpp'=>'600'};
+$data{'Sarjin Pepper'}={'price'=>'500000','food'=>'10000','tpp'=>'60'};
+$data{'Dragon Fruit'}={'price'=>'75000','food'=>'3000','tpp'=>'86400'};
+$data{'Pumpermelons'}={'price'=>'15000','food'=>'800','tpp'=>'21600'};
+$data{'Blushrooms'}={'price'=>'5000','food'=>'300','tpp'=>'7200'};
+$data{'Zazzberries'}={'price'=>'1000','food'=>'75','tpp'=>'1800'};
+$data{'Dragon Root'}={'price'=>'250','food'=>'20','tpp'=>'300'};
+$data{'Dragon Snaps'}={'price'=>'50','food'=>'5','tpp'=>'30'};
 my $farms=11;
 format OUT_TOP=
-+-------+---------------+-------+-----------------------+--------+----------------+-------+
-|Score  |     Plant     |  tpp  |          Cost         | Rounds |      Time      | Farms |
-+-------+---------------+-------+-----------------------+--------+----------------+-------+
++-------+---------------+------------+-------+-----------------------+--------+----------------+-------+
+|Score  |     Plant     |    cpp     |  tpp  |        Cost       | Rounds |      Time      | Farms |
++-------+---------------+------------+-------+-----------------------+--------+----------------+-------+
 .
 format OUT =
-|@##.## | @<<<<<<<<<<<< | @>>>>>| @>>>>>>>>>>>>>>>>>>>> | @>>>>> | @>>>>>>>>>>>>> | @##   |
-$score,$plant,$tpp,$cost,$rounds,$time,$farms
+|@##.## | @<<<<<<<<<<<< | @>>>>>>>>> | @>>>>>| @>>>>>>>>>>>>>>>> | @>>>>> | @>>>>>>>>>>>>> | @##   |
+$score,$plant,$cpp,$tpp,$cost,$rounds,$time,$farms
 .
 use vars qw( $level $food $help );
 GetOptions('level=s',\$level,
@@ -54,12 +54,13 @@ if(defined $level) {
 	$^="OUT_TOP";
 	foreach $plant (@sorted) {
 		$score=$results{$plant}{'score'};
-		$cost=grouping($results{$plant}{'cost'});
+		$cost=n2gmk($results{$plant}{'cost'});
 		$rounds=$results{$plant}{'rounds'};
-		$time=s2dhms(int($results{$plant}{'time'}));
-		$tpp=s2dhms($data{$plant}{'time'});
+		$time=s2dhms(int($results{$plant}{'tpp'}));
+		$tpp=s2dhms($data{$plant}{'tpp'});
+		$cpp=grouping($data{$plant}{'price'});
 		write;
-		#print $results{$plant}{'score'},": ",grouping($results{$plant}{'cost'})," with ",$results{$plant}{'rounds'}," rounds of ",$plant," (this will take ".s2dhms(int($results{$plant}{'time'})),") with $farms farms) \n";
+		#print $results{$plant}{'score'},": ",grouping($results{$plant}{'cost'})," with ",$results{$plant}{'rounds'}," rounds of ",$plant," (this will take ".s2dhms(int($results{$plant}{'tpp'})),") with $farms farms) \n";
 	}
 } elsif (defined $food) {
 	print "Price of the food at level $food:\n".5*2**($food-1)."\n";
@@ -81,24 +82,47 @@ if(defined $level) {
 	print " --food: display price of the food at that level\n";
 }
 # ----
-sub compute {
-	local $food=shift;
-	local $plant=shift;
-	$round=1+int($food/$data{$plant}{'food'}/$farms);
-	$time=$data{$plant}{'time'}*$round;
-	$time=$data{$plant}{'time'} if ($time < $data{$plant}{'time'} );
+# Rounding function
+sub round($) {
+	my $n=shift;
+	if ($n == sprintf('%.0f',$n)) {
+		return $n;
+	} else {
+		return int($n)+1;
+	}
+}
+sub compute($) {
+	my $food=shift;
+	my $plant=shift;
+	# How many plants do I need for gather required food ?
+	my $plants=round($food/$data{$plant}{'food'});
+	my $cost=$plants*$data{$plant}{'price'};
+	# How many rounds of n farms do I need to gather food ?
+	my $rounds=round($plants/$farms);
+	# How many time does those rounds will take ?
+	my $time=$data{$plant}{'tpp'}*$rounds;
+	$time=$data{$plant}{'tpp'} if ($time < $data{$plant}{'tpp'} );
 	# This is the cost of the n rounds
-	$cost=$food*$data{$plant}{'price'};
-	$score=sprintf('%5.2f',log($time*$cost)/log(10));
-	return {'plant'=>$plant,'time'=>$time,'score'=>$score,'rounds'=>$round,'cost'=>$cost};
+	my $score=sprintf('%5.2f',log($time*$cost)/log(10));
+	return {'plant'=>$plant,'tpp'=>$time,'score'=>$score,'rounds'=>$rounds,'cost'=>$cost};
 
 }
-sub grouping {
+sub grouping($) {
 	local $_  = shift;
 	1 while s/^(-?\d+)(\d{3})/$1 $2/;
 	return $_;
 }
-sub s2dhms {
+sub n2gmk($) {
+    my $n=shift;
+	# This will give to power of 10 of the number, but I need a multiple of 3
+	my $pow10=log($n)/log(10);
+	# Rounding: if results seems to be an integer (if $n=1000_000, for example), actually it is not
+	$pow10="$pow10";
+	# Now it is
+	my $pow=int($pow10/3);
+	return $n/(10**(3*$pow)).substr('kMGTP',$pow-1,1)."\n";
+}
+sub s2dhms($) {
 	$secs=shift(@_);
 	my $out;
 	my %unity;
