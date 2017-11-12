@@ -29,12 +29,12 @@ format OUT =
 $score,$plant,$cpp,$tpp,$cost,$rounds,$time,$farms
 .
 format DV_TOP =
-+--------------+------+-------------+-----------------------------+-----------------------------------------+-----------+
-| Name         | Inc. | Incubation  | Combo                       | Habitats                                | Trait     |
-+--------------+------+-------------+-----------------------------+-----------------------------------------+-----------+
++--------------+------+-------------+-------------------------------+-----------------------------------------------+-----------+
+| Name         | Inc. | Incubation  |             Combo             |                    Habitats                   | Trait     |
++--------------+------+-------------+-------------------------------+-----------------------------------------------+-----------+
 .
 format DV =
-|@<<<<<<<<<<<< | @<<< | @<<<<<<<<<< | @>>>>>>>>>>>>+@<<<<<<<<<<<< | @<<<<<<<< @<<<<<<<< @<<<<<<<< @<<<<<<<< | @<<<<<<<< |
+|@<<<<<<<<<<<< | @<<< | @<<<<<<<<<< | @>>>>>>>>>>>> + @<<<<<<<<<<<< | @|||||||| / @|||||||| / @|||||||| / @|||||||| | @<<<<<<<< |
 $name, $income, $incubation_time, $combo1, $combo2, $habitat1, $habitat2, $habitat3, $habitat4, $trait
 .
 use vars qw( $level $food $help $incubation );
@@ -136,6 +136,9 @@ if(defined $level) {
 } elsif (defined $food) {
 	print "Price of the food at level $food:\n".5*2**($food-1)."\n";
 } elsif (defined $db) {
+	if ($db !~ /.*=.*/) {
+		die "Should be command=value. Exiting.\n";
+	}
 	my $c=get $URL;
 	my @dragons;
 	my $habitats;
@@ -145,7 +148,13 @@ if(defined $level) {
 	}
 	#print Dumper(\@dragons);
 	#my $dragon=pop(grep {/^$incubation.*/i} @dragons);
-	my @res=grep {/^$db.*/i} @dragons;
+	(my $command, my $value)=split(/=/,$db);
+	my @res;
+	if ($command eq 'name') {
+	 	@res=grep {/^$value.*/i} @dragons;
+	} elsif ($command eq 'trait') {
+	 	@res=grep {/.*$value$/i} @dragons;
+	}
 	# Nom,Income,,NbS,Prio,Urgence ?,NbG,Prio,Urgence ?,Incubation,Combo,,Permanent ?,Habitat,Habitat,Habitat,Habitat,Trait
 	select(STDOUT);
 	$~="DV";
@@ -166,7 +175,7 @@ if(defined $level) {
 	print "\n DragonVale Helper\n\n";
 	print basename($0)," --level [<start level>-]<level> [ --farms <n> ]\n";
 	print basename($0)," --food  <level>\n\n";
-	print basename($0)," --db  <dragon>\n\n";
+	print basename($0)," --db <command>=<value>\n\n";
 	print " --level: compute food dragon needs to reach that level, from level 1 or <start level>\n";
 	print " --farms: number of treat farm you have\n";
 	print " This will print something like\n\n";
@@ -179,5 +188,7 @@ if(defined $level) {
 	print " First number is the score: log10(time*cost). This is supposed to indicate how a combination is interesting. The lower the score, the more it is.\n";
 	print " In this case, the first combination is more interesting, as it cost you less and takes less time.\n\n";
 	print " --food: display price of the food at that level\n";
-	print " --db:	display various information about that dragon\n";
+	print " --db:	display various informations. Command can be :\n";
+	print "   name: display infos about dragon 'value'\n";
+	print "   trait: display which dragon has trait 'value'\n";
 }
