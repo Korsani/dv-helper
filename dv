@@ -166,6 +166,7 @@ if(defined $level) {
 	print "\n DragonVale Helper\n\n";
 	print basename($0)," --level [<start level>-]<level> [ --farms <n> ]\n";
 	print basename($0)," --food  <level>\n\n";
+	print basename($0)," --db  <dragon>\n\n";
 	print " --level: compute food dragon needs to reach that level, from level 1 or <start level>\n";
 	print " --farms: number of treat farm you have\n";
 	print " This will print something like\n\n";
@@ -178,4 +179,5 @@ if(defined $level) {
 	print " First number is the score: log10(time*cost). This is supposed to indicate how a combination is interesting. The lower the score, the more it is.\n";
 	print " In this case, the first combination is more interesting, as it cost you less and takes less time.\n\n";
 	print " --food: display price of the food at that level\n";
+	print " --db:	display various information about that dragon\n";
 }
