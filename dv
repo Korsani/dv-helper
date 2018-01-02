@@ -4,6 +4,8 @@ use Time::Seconds;
 use Data::Dumper;
 use File::Basename;
 use LWP::Simple;
+use Cache::Memcached;
+use constant CACHE_TO	=>	ONE_DAY;
 # Price of the food, and time to grow
 $data{'Berry Bauble'}={'price'=>'65000000','food'=>'1000000','tpp'=>'129600'};
 $data{'Kraken Kabbage'}={'price'=>'35000000','food'=>'500000','tpp'=>'21600'};
@@ -17,6 +19,7 @@ $data{'Blushrooms'}={'price'=>'5000','food'=>'300','tpp'=>'7200'};
 $data{'Zazzberries'}={'price'=>'1000','food'=>'75','tpp'=>'1800'};
 $data{'Dragon Root'}={'price'=>'250','food'=>'20','tpp'=>'300'};
 $data{'Dragon Snaps'}={'price'=>'50','food'=>'5','tpp'=>'30'};
+@db_keys=('name','income','nb','incubation','permanent','trait');
 my $URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vSdpJ8PP_odJwsMAoSOSIGR__Ikff2EyDD99yneuocLsRqH1VMNgtvl3qFSFAEGYBtuiueOq53jYJfr/pub?gid=167749365&single=true&output=csv';
 my $farms=11;
 format OUT_TOP=
@@ -29,20 +32,25 @@ format OUT =
 $score,$plant,$cpp,$tpp,$cost,$rounds,$time,$farms
 .
 format DV_TOP =
-+--------------+------+-------------+-------------------------------+-----------------------------------------------+-----------+
-| Name         | Inc. | Incubation  |             Combo             |                    Habitats                   | Trait     |
-+--------------+------+-------------+-------------------------------+-----------------------------------------------+-----------+
++---------------+---+------+-------------+-------------------------------+-----------------------------------------------+-----------+
+| Name          | Q | Inc. | Incubation  |             Combo             |                    Habitats                   | Trait     |
++---------------+---+------+-------------+-------------------------------+-----------------------------------------------+-----------+
 .
 format DV =
-|@<<<<<<<<<<<< | @<<< | @<<<<<<<<<< | @>>>>>>>>>>>> + @<<<<<<<<<<<< | @|||||||| / @|||||||| / @|||||||| / @|||||||| | @<<<<<<<< |
-$name, $income, $incubation_time, $combo1, $combo2, $habitat1, $habitat2, $habitat3, $habitat4, $trait
+|@<<<<<<<<<<<<< |@<<| @<<< | @<<<<<<<<<< | @>>>>>>>>>>>> + @<<<<<<<<<<<< | @|||||||| / @|||||||| / @|||||||| / @|||||||| | @<<<<<<<< |
+$name, $quantity, $income, $incubation_time, $combo1, $combo2, $habitat1, $habitat2, $habitat3, $habitat4, $trait
 .
 use vars qw( $level $food $help $incubation );
+
+my $memc=new Cache::Memcached {'servers' => [ ['mc1:11211',3],['mc2:11211',3],['mc3:11211',1],['mc4:11211',1],['mc5:11211',1] ] } or die "$!" ;
+
 GetOptions('level=s',\$level,
 	'food=i',\$food,
 	'help',\$help,
 	'farms=i',\$farms,
-	'db=s',\$db
+	'db=s',\$db,
+	'nocache',\$nocache,
+	'fresh',\$nocache
 );
 
 # ----
@@ -139,29 +147,56 @@ if(defined $level) {
 	if ($db !~ /.*=.*/) {
 		die "Should be command=value. Exiting.\n";
 	}
-	my $c=get $URL;
+	(my $command, my $value)=split(/=/,$db);
+	if ( ! grep { /$command/ } @db_keys) {
+		die "'$command' is not an authorized db key\nYou may use : ".join(' ',@db_keys)."\n";
+	}
 	my @dragons;
 	my $habitats;
-	foreach my $line (split(/\r\n/,$c)) {
-		$line=~s/\xa0/ /g;
-		push @dragons,($line);
+	my %db;
+	my $ref=$memc->get('dv_db');
+	if (! defined $ref or $nocache) {
+		print "# fresh (".CACHE_TO."s)\n";
+		my $c=get $URL;
+		foreach my $line (split(/\r\n/,$c)) {
+			$line=~s/\xa0/ /g;
+			# Air rift,15,1,0,,Oui,1,, ,48h 00m 00s,,,Non,air,rift,,,air
+			(my $name, my $income,my $income2,my $nbs, my $prios,my $us,my $nbg,my $priog,my $ug,my $incubation,my $combo1,my $combo2,my $permanent,my $h1,my $h2, my $h3, my $h4,my $trait)=split(/,/,$line);
+			next if ($name eq 'Nom' or $name eq '' or $name eq 'Nb de dragons' or $name eq 'Nb de gemstone');
+			$name=lc($name);
+			#$db{'name'}=$name;
+			$db{$name}{'name'}=$name;
+			$db{$name}{'income'}=$income;
+			$db{$name}{'nb'}=$nbg;
+			$db{$name}{'incubation'}=$incubation;
+			$db{$name}{'combo'}=[lc($combo1), lc($combo2)];
+			$db{$name}{'permanent'}=$permanent;
+			$db{$name}{'habitats'}=[lc($h1),lc($h2),lc($h3),lc($h4)];
+			$db{$name}{'trait'}=lc($trait);
+		}
+		$memc->set('dv_db',\%db,CACHE_TO);
+	} else {
+		print "# cached (".CACHE_TO."s)\n";
+		%db=%{$ref};
 	}
-	#print Dumper(\@dragons);
-	#my $dragon=pop(grep {/^$incubation.*/i} @dragons);
-	(my $command, my $value)=split(/=/,$db);
+	#print Dumper(\%db);
 	my @res;
 	if ($command eq 'name') {
-	 	@res=grep {/^$value.*/i} @dragons;
-	} elsif ($command eq 'trait') {
-	 	@res=grep {/.*$value$/i} @dragons;
+		push @res,(lc($value)) if (defined $db{lc($value)});
+	} else {
+		foreach my $dragon (keys %db) {
+			print $dragon if (! defined $db{$dragon}{$command});
+			push @res,($dragon) if ($db{$dragon}{$command} eq lc($value));
+		}
 	}
+	#print Dumper(@res);
 	# Nom,Income,,NbS,Prio,Urgence ?,NbG,Prio,Urgence ?,Incubation,Combo,,Permanent ?,Habitat,Habitat,Habitat,Habitat,Trait
 	select(STDOUT);
 	$~="DV";
 	$^="DV_TOP";
-	foreach my $line (@res) {
+	foreach my $dragon (@res) {
 		$trait='';
-		($name, $income, $incubation_time, $combo1, $combo2, $habitat1, $habitat2, $habitat3, $habitat4, $trait)=(split(/,/,$line))[0,1,9,10,11,13,14,15,16,17];
+		($name, $income,$quantity, $incubation_time, $combo1, $combo2, $habitat1, $habitat2, $habitat3, $habitat4, $trait)=(ucfirst($dragon),$db{$dragon}{'income'},$db{$dragon}{'nb'},$db{$dragon}{'incubation'},$db{$dragon}{'combo'}[0],$db{$dragon}{'combo'}[1],$db{$dragon}{'habitats'}[0],$db{$dragon}{'habitats'}[1],$db{$dragon}{'habitats'}[2],$db{$dragon}{'habitats'}[3],$db{$dragon}{'trait'});
 		$habitat2=defined $habitat2?$habitat2:'';
 		$habitat3=defined $habitat3?$habitat3:'';
 		$habitat4=defined $habitat4?$habitat4:'';
@@ -175,7 +210,7 @@ if(defined $level) {
 	print "\n DragonVale Helper\n\n";
 	print basename($0)," --level [<start level>-]<level> [ --farms <n> ]\n";
 	print basename($0)," --food  <level>\n\n";
-	print basename($0)," --db <command>=<value>\n\n";
+	print basename($0)," --db <command>=<value> [--fresh]\n\n";
 	print " --level: compute food dragon needs to reach that level, from level 1 or <start level>\n";
 	print " --farms: number of treat farm you have\n";
 	print " This will print something like\n\n";
@@ -189,6 +224,6 @@ if(defined $level) {
 	print " In this case, the first combination is more interesting, as it cost you less and takes less time.\n\n";
 	print " --food: display price of the food at that level\n";
 	print " --db:	display various informations. Command can be :\n";
-	print "   name: display infos about dragon 'value'\n";
-	print "   trait: display which dragon has trait 'value'\n";
+	print "   ",join(' ',@db_keys),"\n";
+	print " --nocache: do not read data from cache\n";
 }
