@@ -5,7 +5,11 @@ use Data::Dumper;
 use File::Basename;
 use LWP::Simple;
 use Cache::Memcached;
-use constant CACHE_TO	=>	ONE_MONTH;
+use Config::Auto;
+use Pod::Usage;
+
+$conf=Config::Auto->new(source => '/etc/dv.conf');
+use constant CACHE_TO	=>	ONE_DAY;
 # Price of the food, and time to grow
 $data{'Berry Bauble'}={'price'=>'65000000','food'=>'1000000','tpp'=>'129600'};
 $data{'Kraken Kabbage'}={'price'=>'35000000','food'=>'500000','tpp'=>'21600'};
@@ -20,7 +24,8 @@ $data{'Zazzberries'}={'price'=>'1000','food'=>'75','tpp'=>'1800'};
 $data{'Dragon Root'}={'price'=>'250','food'=>'20','tpp'=>'300'};
 $data{'Dragon Snaps'}={'price'=>'50','food'=>'5','tpp'=>'30'};
 @db_keys=('name','income','nb','incubation','permanent','trait');
-my $URL='https://docs.google.com/spreadsheets/d/e/2PACX-1vSdpJ8PP_odJwsMAoSOSIGR__Ikff2EyDD99yneuocLsRqH1VMNgtvl3qFSFAEGYBtuiueOq53jYJfr/pub?gid=167749365&single=true&output=csv';
+use constant URL	=>	'https://docs.google.com/spreadsheets/d/e/2PACX-1vSdpJ8PP_odJwsMAoSOSIGR__Ikff2EyDD99yneuocLsRqH1VMNgtvl3qFSFAEGYBtuiueOq53jYJfr/pub?gid=167749365&single=true&output=csv';
+use constant MEMCACHE_KEY	=> 'dv_db';
 my $farms=11;
 format OUT_TOP=
 +-------+---------------+---------+-------+-----------+--------+----------------+-------+
@@ -41,17 +46,25 @@ format DV =
 $name, $quantity, $income, $incubation_time, $combo1, $combo2, $habitat1, $habitat2, $habitat3, $habitat4, $trait
 .
 use vars qw( $level $food $help $incubation );
+my $memc=new Cache::Memcached;
+my @memcache_servers;
+my $config=$conf->parse;
+foreach my $serv (keys %{$config}) {
+	push @memcache_servers,["$serv:".$config->{$serv}->[0],$config->{$serv}->[1]];
+}
+$memc->set_servers(\@memcache_servers);
 
-my $memc=new Cache::Memcached {'servers' => [ ['mc1:11211',3],['mc2:11211',3],['mc3:11211',1],['mc4:11211',1],['mc5:11211',1] ] } or die "$!" ;
-
-GetOptions('level=s',\$level,
+GetOptions(
+	'level=s',\$level,
 	'food=i',\$food,
 	'help',\$help,
 	'farms=i',\$farms,
 	'db=s',\$db,
 	'nocache',\$nocache,
-	'fresh',\$nocache
+	'fresh',\$nocache,
 );
+
+pod2usage(-verbose => 2) if ($help);
 
 # ----
 # Rounding function
@@ -110,6 +123,31 @@ sub n2gmk($) {
 	$res=~s/ //;
 	return $res;
 }
+sub get_data() {
+	my $ref=$memc->get(MEMCACHE_KEY);
+	return $ref if ($ref);
+	my $c=get URL;
+	my %db;
+	foreach my $line (split(/\r\n/,$c)) {
+		$line=~s/\xa0/ /g;
+		# Air rift,15,1,0,,Oui,1,, ,48h 00m 00s,,,Non,air,rift,,,air
+		(my $name, my $income,my $income2,my $nbs, my $prios,my $us,my $nbg,my $priog,my $ug,my $incubation,my $combo1,my $combo2,my $permanent,my $h1,my $h2, my $h3, my $h4,my $trait)=split(/,/,$line);
+		next if ($name eq 'Nom' or $name eq '' or $name eq 'Nb de dragons' or $name eq 'Nb de gemstone');
+		$name=lc($name);
+		#$db{'name'}=$name;
+		$db{$name}{'name'}=$name;
+		$db{$name}{'income'}=$income;
+		$db{$name}{'nb'}=$nbg;
+		$db{$name}{'incubation'}=$incubation;
+		$db{$name}{'combo'}=[lc($combo1), lc($combo2)];
+		$db{$name}{'permanent'}=$permanent;
+		$db{$name}{'habitats'}=[lc($h1),lc($h2),lc($h3),lc($h4)];
+		$db{$name}{'trait'}=lc($trait);
+	}
+	print "Updating cache\n";
+	$memc->set(MEMCACHE_KEY,\%db,CACHE_TO) or die "Cache failed: $!\n";
+	return \%db;
+}
 # ----
 if(defined $level) {
 	our $to=$level;
@@ -143,6 +181,8 @@ if(defined $level) {
 	}
 } elsif (defined $food) {
 	print "Price of the food at level $food:\n".5*2**($food-1)."\n";
+} elsif (defined $nocache) {
+	$memc->delete(MEMCACHE_KEY);
 } elsif (defined $db) {
 	if ($db !~ /.*=.*/) {
 		die "Should be command=value. Exiting.\n";
@@ -153,32 +193,8 @@ if(defined $level) {
 	}
 	my @dragons;
 	my $habitats;
-	my %db;
-	my $ref=$memc->get('dv_db');
-	if (! defined $ref or $nocache) {
-		print "# fresh (".CACHE_TO."s)\n";
-		my $c=get $URL;
-		foreach my $line (split(/\r\n/,$c)) {
-			$line=~s/\xa0/ /g;
-			# Air rift,15,1,0,,Oui,1,, ,48h 00m 00s,,,Non,air,rift,,,air
-			(my $name, my $income,my $income2,my $nbs, my $prios,my $us,my $nbg,my $priog,my $ug,my $incubation,my $combo1,my $combo2,my $permanent,my $h1,my $h2, my $h3, my $h4,my $trait)=split(/,/,$line);
-			next if ($name eq 'Nom' or $name eq '' or $name eq 'Nb de dragons' or $name eq 'Nb de gemstone');
-			$name=lc($name);
-			#$db{'name'}=$name;
-			$db{$name}{'name'}=$name;
-			$db{$name}{'income'}=$income;
-			$db{$name}{'nb'}=$nbg;
-			$db{$name}{'incubation'}=$incubation;
-			$db{$name}{'combo'}=[lc($combo1), lc($combo2)];
-			$db{$name}{'permanent'}=$permanent;
-			$db{$name}{'habitats'}=[lc($h1),lc($h2),lc($h3),lc($h4)];
-			$db{$name}{'trait'}=lc($trait);
-		}
-		$memc->set('dv_db',\%db,CACHE_TO);
-	} else {
-		print "# cached (".CACHE_TO."s)\n";
-		%db=%{$ref};
-	}
+	my $ref=get_data();
+	my %db=%{$ref};
 	#print Dumper(\%db);
 	my @res;
 	if ($command eq 'name') {
@@ -206,24 +222,83 @@ if(defined $level) {
 	}
    	#"$name:$income:$incubation_time:$trait";
 	#print "\n";
-} else {
-	print "\n DragonVale Helper\n\n";
-	print basename($0)," --level [<start level>-]<level> [ --farms <n> ]\n";
-	print basename($0)," --food  <level>\n\n";
-	print basename($0)," --db <command>=<value> [--fresh]\n\n";
-	print " --level: compute food dragon needs to reach that level, from level 1 or <start level>\n";
-	print " --farms: number of treat farm you have\n";
-	print " This will print something like\n\n";
-	print "
-    +-------+---------------+-------+-----------------------+--------+----------------+-------+
-    |Score  |     Plant     |  tpp  |          Cost         | Rounds |      Time      | Farms |
-    +-------+---------------+-------+-----------------------+--------+----------------+-------+
-    | 15.83 | Dragon Snaps  |    30s|           786 432 000 | 285976 |      99d7h8min |  11   |
-    | 16.83 | Sarjin Pepper |   1min|     7 864 320 000 000 |    143 |        2h23min |  11   |\n\n";
-	print " First number is the score: log10(time*cost). This is supposed to indicate how a combination is interesting. The lower the score, the more it is.\n";
-	print " In this case, the first combination is more interesting, as it cost you less and takes less time.\n\n";
-	print " --food: display price of the food at that level\n";
-	print " --db:	display various informations. Command can be :\n";
-	print "   ",join(' ',@db_keys),"\n";
-	print " --nocache: do not read data from cache\n";
 }
+
+__END__
+
+=pod
+
+=cut
+
+=head1 NAME
+
+	dv
+
+=head1 SYNOPSIS
+
+	dv --level [<start level>-]<level> [ --farms <n> ]
+	dv --food <level>
+	dv --db <command>=<value>
+	dv --fresh | --nocache
+
+=head1 DESCRIPTION
+
+Dragonvale helper.
+
+Helps to calculate food needed to get a dragon from one level to another (rift not supported)
+
+Query ahum ... "database" (my Google Doc), and use memcached to store data.
+
+=head1 OPTIONS
+
+=over
+
+=item B<--level>
+
+Compute food dragon needs to reach that level, from level 1 or <start level>\n";
+
+=item B<--farms>
+
+Number of treat farm you have
+
+This will print something like
+    
+	+-------+---------------+-------+-----------------------+--------+----------------+-------+
+	|Score  |     Plant     |  tpp  |          Cost         | Rounds |      Time      | Farms |
+	+-------+---------------+-------+-----------------------+--------+----------------+-------+
+	| 15.83 | Dragon Snaps  |    30s|           786 432 000 | 285976 |      99d7h8min |  11   |
+	| 16.83 | Sarjin Pepper |   1min|     7 864 320 000 000 |    143 |        2h23min |  11   |
+
+First number is the score: log10(time*cost). This is supposed to indicate how a combination is interesting. The lower the score, the more it is.
+
+In this case, the first combination is more interesting, as it cost you less and takes less time.
+
+=item B<--food>
+
+Display price of the food at that level
+
+=item B<--db>
+
+Query database. Command can be: name, incubation, nb, income, trait, permanent 
+
+=item B<--nocache>, B<--fresh>
+
+Invalidate cache, forcing script to rebuild it at next run (with --db)
+
+=back 
+
+=head1 FILES
+
+=over
+
+=item B</etc/dv.conf>
+
+Configuration file for memcached servers:
+
+	server1:port:weight
+	server2:port:weight
+	...
+
+=back
+
+=cut
