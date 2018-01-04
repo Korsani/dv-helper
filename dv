@@ -77,15 +77,14 @@ sub round($) {
 	}
 }
 sub grouping($) {
-	local $_  = shift;
+	shift;
 	1 while s/^(-?\d+)(\d{3})/$1 $2/;
 	return $_;
 }
 sub s2dhms($) {
-	$secs=shift(@_);
+	my $secs=shift(@_);
 	my $out;
-	my %unity;
-	@unity=('s','min','h','d');
+	my @unity=('s','min','h','d');
 	foreach my $dur (ONE_DAY,ONE_HOUR,ONE_MINUTE,1) {
 		if ($secs>=$dur) {
 			# Je fais ce que je veux, non mais
@@ -197,20 +196,16 @@ if(defined $level) {
 	my %db=%{$ref};
 	#print Dumper(\%db);
 	my @res;
-	if ($command eq 'name') {
-		push @res,(lc($value)) if (defined $db{lc($value)});
-	} else {
-		foreach my $dragon (keys %db) {
-			print $dragon if (! defined $db{$dragon}{$command});
-			push @res,($dragon) if ($db{$dragon}{$command} eq lc($value));
-		}
+	foreach my $dragon (keys %db) {
+		print $dragon if (! defined $db{$dragon}{$command});
+		push @res,($dragon) if ($db{$dragon}{$command} =~ /$value/i);
 	}
 	#print Dumper(@res);
 	# Nom,Income,,NbS,Prio,Urgence ?,NbG,Prio,Urgence ?,Incubation,Combo,,Permanent ?,Habitat,Habitat,Habitat,Habitat,Trait
 	select(STDOUT);
 	$~="DV";
 	$^="DV_TOP";
-	foreach my $dragon (@res) {
+	foreach my $dragon (sort @res) {
 		$trait='';
 		($name, $income,$quantity, $incubation_time, $combo1, $combo2, $habitat1, $habitat2, $habitat3, $habitat4, $trait)=(ucfirst($dragon),$db{$dragon}{'income'},$db{$dragon}{'nb'},$db{$dragon}{'incubation'},$db{$dragon}{'combo'}[0],$db{$dragon}{'combo'}[1],$db{$dragon}{'habitats'}[0],$db{$dragon}{'habitats'}[1],$db{$dragon}{'habitats'}[2],$db{$dragon}{'habitats'}[3],$db{$dragon}{'trait'});
 		$habitat2=defined $habitat2?$habitat2:'';
@@ -222,6 +217,8 @@ if(defined $level) {
 	}
    	#"$name:$income:$incubation_time:$trait";
 	#print "\n";
+} else {
+	pod2usage(-verbose => 2);
 }
 
 __END__
@@ -279,7 +276,11 @@ Display price of the food at that level
 
 =item B<--db>
 
-Query database. Command can be: name, incubation, nb, income, trait, permanent 
+Query database. Command can be: name, incubation, nb, income, trait, permanent.
+
+Value is a perl regex.
+
+For incubation, please note that duration are, for example: 1h 01m 01s
 
 =item B<--nocache>, B<--fresh>
 
